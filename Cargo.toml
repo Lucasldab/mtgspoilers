@@ -49,6 +49,10 @@ regex = "1.10"
 # Configuration
 config = "0.13"
 
+[features]
+default = ["fetcher"]
+fetcher = []
+
 [dev-dependencies]
 mockito = "1.2"
 tokio-test = "0.4"
