@@ -1,0 +1,24 @@
+[app]
+tick_rate_ms = 250
+auto_refresh_minutes = 5
+
+[reddit]
+subreddit = "magicTCG"
+fetch_limit = 25
+trusted_users = [
+    "Wizards_Magic",
+    "MagicTCG_Official"
+]
+
+[scryfall]
+api_url = "https://api.scryfall.com"
+rate_limit_ms = 100
+
+[filter]
+min_authenticity_score = 0.3
+dedup_hash_threshold = 5
+hide_fake_by_default = true
+
+[display]
+confidence_colors = true
+show_thumbnails = false  # Terminal image support is complex
