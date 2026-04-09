@@ -1,7 +1,9 @@
+use anyhow::Result;
+use chrono::Utc;
 use std::sync::OnceLock;
 
-use tokio::time::{interval, Duration};
 use crate::api::reddit::RedditClient;
+use crate::api::scryfall::ScryfallClient;
 use crate::db::Database;
 use crate::filter::{dedup::Deduplicator, verify::AuthenticityScorer};
 use crate::models::card::{Card, Confidence};
@@ -9,100 +11,120 @@ use tracing::{info, warn, error};
 
 static RE_SET_CODE: OnceLock<regex::Regex> = OnceLock::new();
 
-pub struct BackgroundFetcher {
+pub struct Fetcher {
     db: Database,
     reddit: RedditClient,
+    scryfall: ScryfallClient,
     dedup: Deduplicator,
-    interval: Duration,
 }
 
-impl BackgroundFetcher {
-    pub async fn new(db: Database, tick_minutes: u64) -> anyhow::Result<Self> {
+impl Fetcher {
+    pub async fn new(db: Database) -> Result<Self> {
         let dedup = Deduplicator::from_db(&db).await?;
         Ok(Self {
             db,
             reddit: RedditClient::new(),
+            scryfall: ScryfallClient::new(),
             dedup,
-            interval: Duration::from_secs(tick_minutes * 60),
         })
     }
 
-    pub async fn run(mut self) {
-        let mut ticker = interval(self.interval);
+    /// Fetches from Reddit, cross-references with Scryfall, and saves new cards to the DB.
+    /// Returns the number of new cards saved this cycle.
+    pub async fn fetch_once(&mut self) -> Result<usize> {
+        info!("Starting on-demand fetch cycle");
 
-        info!("Background fetcher started");
-
-        loop {
-            ticker.tick().await;
-
-            if let Err(e) = self.fetch_cycle().await {
-                error!("Fetch cycle failed: {}", e);
-            }
-        }
-    }
-
-    async fn fetch_cycle(&mut self) -> anyhow::Result<()> {
-        info!("Starting fetch cycle");
-
-        // Fetch from Reddit
         let posts = self.reddit.fetch_recent().await?;
         info!("Fetched {} posts from Reddit", posts.len());
 
+        let mut new_count = 0usize;
+
         for post in posts {
-            // Score authenticity
-            let score = AuthenticityScorer::score_reddit(&post, &[]); // Load trusted users from config
+            let score = AuthenticityScorer::score_reddit(&post, &[]);
 
             if score < 0.3 {
                 warn!("Skipping low-score post: {} (score: {})", post.title, score);
                 continue;
             }
 
-            // Extract card name
             let card_name = post.extract_card_name()
                 .unwrap_or_else(|| post.title.clone());
 
             // Check for duplicates
-            // In real impl: fetch image and hash it
             if let Some(existing_id) = self.dedup.check_duplicate(&card_name, Some(&post.url), None) {
                 info!("Duplicate detected: {} matches {}", card_name, existing_id);
-                // Add source to existing card
                 self.db.add_source(&existing_id, &post.to_source(score)).await?;
                 continue;
             }
 
-            // Create new card
-            let set_code = extract_set_from_title(&post.title)
-                .unwrap_or_else(|| "UNKNOWN".to_string());
-
-            let card = Card {
-                id: format!("reddit_{}", post.id),
-                name: card_name.clone(),
-                mana_cost: None, // Would need OCR
-                set_code,
-                card_type: None,
-                text: None,
-                power_toughness: None,
-                loyalty: None,
-                image_url: Some(post.url.clone()),
-                confidence: Confidence::Unverified,
-                sources: vec![post.to_source(score)],
-                first_seen: post.created_utc,
-                last_updated: post.created_utc,
-                is_fake: false,
-            };
-
-            // Register in dedup index
-            self.dedup.register(&card, None);
-
-            // Save to DB
-            self.db.save_card(&card).await?;
-            info!("Saved new card: {}", card.name);
+            // Try Scryfall lookup — errors are treated as Unverified (non-fatal)
+            let scryfall_result = self.scryfall.fetch_by_name(&card_name).await;
+            match scryfall_result {
+                Ok(Some(mut scryfall_card)) => {
+                    scryfall_card.confidence = Confidence::Verified;
+                    scryfall_card.sources.push(post.to_source(score));
+                    scryfall_card.first_seen = post.created_utc;
+                    scryfall_card.last_updated = Utc::now();
+                    self.dedup.register(&scryfall_card, None);
+                    self.db.save_card(&scryfall_card).await?;
+                    info!("Saved verified card: {}", scryfall_card.name);
+                    new_count += 1;
+                }
+                Ok(None) => {
+                    info!("Card '{}' not found on Scryfall — saving as Unverified", card_name);
+                    let set_code = extract_set_from_title(&post.title)
+                        .unwrap_or_else(|| "UNK".to_string());
+                    let card = Card {
+                        id: format!("reddit_{}", post.id),
+                        name: card_name.clone(),
+                        mana_cost: None,
+                        set_code,
+                        card_type: None,
+                        text: None,
+                        power_toughness: None,
+                        loyalty: None,
+                        image_url: None,
+                        confidence: Confidence::Unverified,
+                        sources: vec![post.to_source(score)],
+                        first_seen: post.created_utc,
+                        last_updated: Utc::now(),
+                        is_fake: false,
+                    };
+                    self.dedup.register(&card, None);
+                    self.db.save_card(&card).await?;
+                    info!("Saved unverified card: {}", card.name);
+                    new_count += 1;
+                }
+                Err(e) => {
+                    warn!("Scryfall lookup failed for '{}': {} — saving as Unverified", card_name, e);
+                    let set_code = extract_set_from_title(&post.title)
+                        .unwrap_or_else(|| "UNK".to_string());
+                    let card = Card {
+                        id: format!("reddit_{}", post.id),
+                        name: card_name.clone(),
+                        mana_cost: None,
+                        set_code,
+                        card_type: None,
+                        text: None,
+                        power_toughness: None,
+                        loyalty: None,
+                        image_url: None,
+                        confidence: Confidence::Unverified,
+                        sources: vec![post.to_source(score)],
+                        first_seen: post.created_utc,
+                        last_updated: Utc::now(),
+                        is_fake: false,
+                    };
+                    self.dedup.register(&card, None);
+                    self.db.save_card(&card).await?;
+                    info!("Saved unverified card: {}", card.name);
+                    new_count += 1;
+                }
+            }
         }
 
-        // Also fetch from Scryfall for confirmations
-        // self.check_scryfall_confirmations().await?;
-
-        Ok(())
+        info!("Fetch cycle complete: {} new card(s)", new_count);
+        Ok(new_count)
     }
 }
 
