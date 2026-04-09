@@ -1,4 +1,4 @@
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite, Row};
+use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite, Row, QueryBuilder};
 use crate::models::card::{Card, Confidence, Source, Platform};
 use anyhow::Result;
 use chrono::{DateTime, Utc, NaiveDateTime};
@@ -129,38 +129,40 @@ impl Database {
     }
 
     pub async fn get_cards(&self, filter: &CardFilter) -> Result<Vec<Card>> {
-        let mut query = String::from(
+        let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
             "SELECT id, name, mana_cost, set_code, card_type, text,
                     power_toughness, loyalty, image_url, confidence,
                     is_fake, first_seen, last_updated FROM cards WHERE 1=1"
         );
 
         if let Some(conf) = &filter.confidence {
-            query.push_str(&format!(" AND confidence = '{:?}'", conf));
+            qb.push(" AND confidence = ");
+            qb.push_bind(format!("{:?}", conf));
         }
 
         if let Some(set) = &filter.set_code {
-            // Sanitize: only allow alphanumeric set codes
-            let safe_set: String = set.chars().filter(|c| c.is_alphanumeric()).collect();
-            query.push_str(&format!(" AND set_code = '{}'", safe_set));
+            qb.push(" AND set_code = ");
+            qb.push_bind(set.clone());
         }
 
         if filter.hide_fake {
-            query.push_str(" AND is_fake = false");
+            qb.push(" AND is_fake = false");
         }
 
         if let Some(search) = &filter.search {
-            // Sanitize search: escape single quotes
-            let safe_search = search.replace('\'', "''");
-            query.push_str(&format!(
-                " AND (name LIKE '%{}%' OR text LIKE '%{}%' OR set_code LIKE '%{}%')",
-                safe_search, safe_search, safe_search
-            ));
+            let pattern = format!("%{}%", search);
+            qb.push(" AND (name LIKE ");
+            qb.push_bind(pattern.clone());
+            qb.push(" OR text LIKE ");
+            qb.push_bind(pattern.clone());
+            qb.push(" OR set_code LIKE ");
+            qb.push_bind(pattern);
+            qb.push(")");
         }
 
-        query.push_str(" ORDER BY first_seen DESC");
+        qb.push(" ORDER BY first_seen DESC");
 
-        let rows = sqlx::query(&query).fetch_all(&self.pool).await?;
+        let rows = qb.build().fetch_all(&self.pool).await?;
 
         let mut result = Vec::new();
         for row in rows {
