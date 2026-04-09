@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
 use crate::models::card::Card;
 
 pub struct Deduplicator {
@@ -15,6 +16,19 @@ impl Deduplicator {
             name_index: HashMap::new(),
             url_index: HashMap::new(),
         }
+    }
+
+    /// Seeds the dedup index from existing database cards so restarts don't re-insert duplicates.
+    pub async fn from_db(db: &crate::db::Database) -> Result<Self> {
+        let mut dedup = Self::new();
+        let stubs = db.get_all_card_stubs().await?;
+        for (id, name, image_url) in stubs {
+            dedup.name_index.insert(normalize_name(&name), id.clone());
+            if let Some(url) = image_url {
+                dedup.url_index.insert(normalize_url(&url), id);
+            }
+        }
+        Ok(dedup)
     }
 
     /// Check if this is a duplicate and return the canonical ID if so.

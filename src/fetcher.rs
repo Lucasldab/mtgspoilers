@@ -13,13 +13,14 @@ pub struct BackgroundFetcher {
 }
 
 impl BackgroundFetcher {
-    pub fn new(db: Database, tick_minutes: u64) -> Self {
-        Self {
+    pub async fn new(db: Database, tick_minutes: u64) -> anyhow::Result<Self> {
+        let dedup = Deduplicator::from_db(&db).await?;
+        Ok(Self {
             db,
             reddit: RedditClient::new(),
-            dedup: Deduplicator::new(),
+            dedup,
             interval: Duration::from_secs(tick_minutes * 60),
-        }
+        })
     }
 
     pub async fn run(mut self) {

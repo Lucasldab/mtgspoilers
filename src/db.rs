@@ -233,6 +233,26 @@ impl Database {
 
         Ok(())
     }
+
+    /// Returns (id, name, image_url) tuples for all cards.
+    /// Used by Deduplicator::from_db to seed the in-memory dedup index on startup.
+    pub async fn get_all_card_stubs(&self) -> Result<Vec<(String, String, Option<String>)>> {
+        let rows = sqlx::query("SELECT id, name, image_url FROM cards")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let stubs = rows
+            .into_iter()
+            .map(|row| {
+                let id: String = row.try_get("id").unwrap_or_default();
+                let name: String = row.try_get("name").unwrap_or_default();
+                let image_url: Option<String> = row.try_get("image_url").ok();
+                (id, name, image_url)
+            })
+            .collect();
+
+        Ok(stubs)
+    }
 }
 
 fn parse_confidence(s: &str) -> Confidence {

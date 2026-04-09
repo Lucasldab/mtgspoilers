@@ -38,10 +38,13 @@ async fn main() -> Result<()> {
     let db = Database::new("sqlite:mtg_spoilers.db").await?;
 
     // Spawn background fetcher
-    let db_fetcher = Database::new("sqlite:mtg_spoilers.db").await?;
-    let fetcher = BackgroundFetcher::new(db_fetcher, 5); // 5 minutes
+    let fetcher_db = Database::new("sqlite:mtg_spoilers.db").await?;
+    let tick_minutes: u64 = 5;
     tokio::spawn(async move {
-        fetcher.run().await;
+        match BackgroundFetcher::new(fetcher_db, tick_minutes).await {
+            Ok(fetcher) => fetcher.run().await,
+            Err(e) => tracing::error!("Failed to initialize background fetcher: {}", e),
+        }
     });
 
     // Create app
