@@ -1,4 +1,5 @@
 use crossterm::event::KeyCode;
+use crate::fetcher::Fetcher;
 use crate::models::card::{Card, Confidence};
 use crate::db::{Database, CardFilter};
 
@@ -9,9 +10,12 @@ pub struct App {
     pub mode: AppMode,
     pub search_input: String,
     pub db: Database,
+    pub fetcher: Fetcher,
     pub should_quit: bool,
     /// Signals the main loop to call refresh on the next tick.
     pub needs_refresh: bool,
+    /// Signals the main loop to run fetch_once() on the next tick.
+    pub needs_fetch: bool,
     /// Pending async action to execute in the main loop.
     pub pending_action: Option<PendingAction>,
     /// Status message shown in the footer.
@@ -33,13 +37,18 @@ pub enum AppMode {
 }
 
 impl App {
-    pub async fn new(db: Database) -> anyhow::Result<Self> {
+    pub async fn new(db: Database, mut fetcher: Fetcher) -> anyhow::Result<Self> {
         let filter = CardFilter {
             confidence: None,
             set_code: None,
             hide_fake: true,
             search: None,
         };
+
+        // Fetch on startup so the card list is populated immediately
+        if let Err(e) = fetcher.fetch_once().await {
+            tracing::error!("Initial fetch failed: {}", e);
+        }
 
         let cards = db.get_cards(&filter).await?;
 
@@ -50,8 +59,10 @@ impl App {
             mode: AppMode::Normal,
             search_input: String::new(),
             db,
+            fetcher,
             should_quit: false,
             needs_refresh: false,
+            needs_fetch: false,
             pending_action: None,
             status_message: None,
         })
@@ -71,6 +82,20 @@ impl App {
                     self.needs_refresh = true;
                 }
             }
+        }
+
+        if self.needs_fetch {
+            self.needs_fetch = false;
+            match self.fetcher.fetch_once().await {
+                Ok(n) => {
+                    self.status_message = Some(format!("Fetched {} new card(s).", n));
+                }
+                Err(e) => {
+                    tracing::error!("Fetch failed: {}", e);
+                    self.status_message = Some("Fetch failed — check logs.".to_string());
+                }
+            }
+            self.needs_refresh = true;
         }
 
         if self.needs_refresh {
@@ -132,8 +157,8 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
-                self.needs_refresh = true;
-                self.status_message = Some("Refreshing...".to_string());
+                self.needs_fetch = true;
+                self.status_message = Some("Fetching...".to_string());
             }
             KeyCode::Char('c') => {
                 self.filter.search = None;

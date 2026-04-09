@@ -18,7 +18,7 @@ use tracing::{info, error};
 
 use crate::app::App;
 use crate::db::Database;
-use crate::fetcher::BackgroundFetcher;
+use crate::fetcher::Fetcher;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,18 +37,12 @@ async fn main() -> Result<()> {
     // Initialize database
     let db = Database::new("sqlite:mtg_spoilers.db").await?;
 
-    // Spawn background fetcher
+    // Create on-demand fetcher (no background task)
     let fetcher_db = Database::new("sqlite:mtg_spoilers.db").await?;
-    let tick_minutes: u64 = 5;
-    tokio::spawn(async move {
-        match BackgroundFetcher::new(fetcher_db, tick_minutes).await {
-            Ok(fetcher) => fetcher.run().await,
-            Err(e) => tracing::error!("Failed to initialize background fetcher: {}", e),
-        }
-    });
+    let fetcher = Fetcher::new(fetcher_db).await?;
 
-    // Create app
-    let mut app = App::new(db).await?;
+    // Create app — fetch_once() runs inside App::new on startup
+    let mut app = App::new(db, fetcher).await?;
 
     // Main loop
     let res = run_app(&mut terminal, &mut app).await;
