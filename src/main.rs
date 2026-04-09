@@ -17,6 +17,7 @@ use std::io;
 use tracing::{info, error};
 
 use crate::app::App;
+use crate::config::Config;
 use crate::db::Database;
 use crate::fetcher::Fetcher;
 
@@ -26,6 +27,9 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Starting MTG Spoiler TUI");
+
+    // Load config (graceful fallback — REL-01)
+    let config = Config::load_or_default();
 
     // Setup terminal
     terminal::enable_raw_mode()?;
@@ -37,9 +41,20 @@ async fn main() -> Result<()> {
     // Initialize database
     let db = Database::new("sqlite:mtg_spoilers.db").await?;
 
-    // Create on-demand fetcher (no background task)
+    // Purge old cards on startup (PIPE-06)
+    match db.purge_old_cards(7).await {
+        Ok(n) if n > 0 => info!("Purged {} card(s) older than 7 days", n),
+        Ok(_) => info!("No old cards to purge"),
+        Err(e) => tracing::warn!("Purge failed (non-fatal): {}", e),
+    }
+
+    // Create on-demand fetcher with config values (PIPE-07)
     let fetcher_db = Database::new("sqlite:mtg_spoilers.db").await?;
-    let fetcher = Fetcher::new(fetcher_db).await?;
+    let fetcher = Fetcher::new(
+        fetcher_db,
+        &config.reddit.subreddit,
+        config.scryfall.rate_limit_ms,
+    ).await?;
 
     // Create app — fetch_once() runs inside App::new on startup
     let mut app = App::new(db, fetcher).await?;

@@ -19,12 +19,12 @@ pub struct Fetcher {
 }
 
 impl Fetcher {
-    pub async fn new(db: Database) -> Result<Self> {
+    pub async fn new(db: Database, subreddit: &str, scryfall_rate_limit_ms: u64) -> Result<Self> {
         let dedup = Deduplicator::from_db(&db).await?;
         Ok(Self {
             db,
-            reddit: RedditClient::new(),
-            scryfall: ScryfallClient::new(),
+            reddit: RedditClient::with_subreddit(subreddit),
+            scryfall: ScryfallClient::with_config("https://api.scryfall.com", scryfall_rate_limit_ms),
             dedup,
         })
     }

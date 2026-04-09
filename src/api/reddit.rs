@@ -15,7 +15,11 @@ pub struct RedditClient {
 
 impl RedditClient {
     pub fn new() -> Self {
-        let subreddit = Subreddit::new("magicTCG");
+        Self::with_subreddit("magicTCG")
+    }
+
+    pub fn with_subreddit(subreddit: &str) -> Self {
+        let subreddit = Subreddit::new(subreddit);
         Self {
             subreddit,
             seen_ids: Vec::new(),
