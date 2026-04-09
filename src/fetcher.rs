@@ -1,9 +1,13 @@
+use std::sync::OnceLock;
+
 use tokio::time::{interval, Duration};
 use crate::api::reddit::RedditClient;
 use crate::db::Database;
 use crate::filter::{dedup::Deduplicator, verify::AuthenticityScorer};
 use crate::models::card::{Card, Confidence};
 use tracing::{info, warn, error};
+
+static RE_SET_CODE: OnceLock<regex::Regex> = OnceLock::new();
 
 pub struct BackgroundFetcher {
     db: Database,
@@ -103,8 +107,9 @@ impl BackgroundFetcher {
 }
 
 fn extract_set_from_title(title: &str) -> Option<String> {
-    use regex::Regex;
-    let re = Regex::new(r"\[(\w{2,4})\]").ok()?;
+    let re = RE_SET_CODE.get_or_init(|| {
+        regex::Regex::new(r"\[(\w{2,4})\]").expect("RE_SET_CODE regex is valid")
+    });
     re.captures(title)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_uppercase())

@@ -1,7 +1,12 @@
+use std::sync::OnceLock;
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use roux::{Subreddit, Reddit};
 use crate::models::card::{Source, Platform};
+
+static RE_CARD_SET: OnceLock<regex::Regex> = OnceLock::new();
+static RE_CARD_SPOILER: OnceLock<regex::Regex> = OnceLock::new();
 
 pub struct RedditClient {
     subreddit: Subreddit,
@@ -94,16 +99,20 @@ pub struct RedditPost {
 impl RedditPost {
     /// Extract card name from Reddit post title using regex patterns
     pub fn extract_card_name(&self) -> Option<String> {
-        use regex::Regex;
-
         // Pattern: [SET] Card Name (cost)
-        let re1 = Regex::new(r"\[(\w{2,4})\]\s+(.+?)\s+\(\d").ok()?;
+        let re1 = RE_CARD_SET.get_or_init(|| {
+            regex::Regex::new(r"\[(\w{2,4})\]\s+(.+?)\s+\(\d")
+                .expect("RE_CARD_SET regex is valid")
+        });
         if let Some(caps) = re1.captures(&self.title) {
             return Some(caps.get(2)?.as_str().trim().to_string());
         }
 
         // Pattern: Spoiler: Card Name
-        let re2 = Regex::new(r"(?i)spoiler[:\s]+(.+?)(?:\s+from|\s+\[|$)").ok()?;
+        let re2 = RE_CARD_SPOILER.get_or_init(|| {
+            regex::Regex::new(r"(?i)spoiler[:\s]+(.+?)(?:\s+from|\s+\[|$)")
+                .expect("RE_CARD_SPOILER regex is valid")
+        });
         if let Some(caps) = re2.captures(&self.title) {
             return Some(caps.get(1)?.as_str().trim().to_string());
         }
