@@ -40,12 +40,12 @@ impl RedditClient {
                 Some(RedditPost {
                     id: data.id,
                     title: data.title,
-                    url: data.url,
+                    url: data.url.unwrap_or_default(),
                     author: data.author,
                     created_utc: DateTime::from_timestamp(data.created_utc as i64, 0)
                         .unwrap_or_else(|| Utc::now()),
-                    upvotes: data.ups,
-                    thumbnail: data.thumbnail,
+                    upvotes: data.ups as i64,
+                    thumbnail: if data.thumbnail.is_empty() { None } else { Some(data.thumbnail) },
                     is_self: data.is_self,
                     selftext: data.selftext,
                     flair: data.link_flair_text,

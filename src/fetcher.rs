@@ -79,7 +79,7 @@ impl BackgroundFetcher {
                 power_toughness: None,
                 loyalty: None,
                 image_url: Some(post.url.clone()),
-                confidence: Confidence::Rumor,
+                confidence: Confidence::Unverified,
                 sources: vec![post.to_source(score)],
                 first_seen: post.created_utc,
                 last_updated: post.created_utc,

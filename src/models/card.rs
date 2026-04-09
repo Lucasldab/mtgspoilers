@@ -3,29 +3,23 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Confidence {
-    Rumor,      // Reddit only, unverified
-    Probable,   // Image analysis passed
-    Confirmed,  // Multiple sources
-    Official,   // WotC/Scryfall
+    Verified,    // Card found on Scryfall
+    Unverified,  // Reddit-only, not yet cross-referenced
 }
 
 impl Confidence {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Confidence::Rumor => "🟡 Rumor",
-            Confidence::Probable => "🔵 Probable",
-            Confidence::Confirmed => "🟢 Confirmed",
-            Confidence::Official => "⚪ Official",
+            Confidence::Verified => "✓ Verified",
+            Confidence::Unverified => "? Unverified",
         }
     }
 
     pub fn color(&self) -> ratatui::style::Color {
         use ratatui::style::Color;
         match self {
-            Confidence::Rumor => Color::Yellow,
-            Confidence::Probable => Color::Blue,
-            Confidence::Confirmed => Color::Green,
-            Confidence::Official => Color::White,
+            Confidence::Verified => Color::Green,
+            Confidence::Unverified => Color::Yellow,
         }
     }
 }

@@ -1,14 +1,8 @@
 mod api;
 mod app;
+mod config;
 mod db;
-mod filter;
-mod models;
-mod ui;
-
-mod api;
-mod app;
-mod db;
-mod fetcher;  // ADD THIS LINE
+mod fetcher;
 mod filter;
 mod models;
 mod ui;
@@ -24,7 +18,7 @@ use tracing::{info, error};
 
 use crate::app::App;
 use crate::db::Database;
-use crate::fetcher::BackgroundFetcher;  // ADD THIS LINE
+use crate::fetcher::BackgroundFetcher;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,14 +37,12 @@ async fn main() -> Result<()> {
     // Initialize database
     let db = Database::new("sqlite:mtg_spoilers.db").await?;
 
-    // ADD THESE LINES HERE (after db initialization, before App::new)
     // Spawn background fetcher
     let db_fetcher = Database::new("sqlite:mtg_spoilers.db").await?;
     let fetcher = BackgroundFetcher::new(db_fetcher, 5); // 5 minutes
     tokio::spawn(async move {
         fetcher.run().await;
     });
-    // END ADDED LINES
 
     // Create app
     let mut app = App::new(db).await?;
@@ -101,7 +93,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         // Background tick for async updates
         if last_tick.elapsed() >= tick_rate {
-            // Here you'd trigger background fetches
+            app.tick().await?;
             last_tick = tokio::time::Instant::now();
         }
 

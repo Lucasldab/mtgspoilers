@@ -143,6 +143,33 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(footer, area);
 }
 
+fn draw_filter_popup(f: &mut Frame, app: &App) {
+    let confidence_label = match &app.filter.confidence {
+        None => "Any".to_string(),
+        Some(c) => c.as_str().to_string(),
+    };
+    let hide_fake_label = if app.filter.hide_fake { "Yes" } else { "No" };
+
+    let text = format!(
+        "Confidence: {}\nHide Fake: {}\n\n[c] Cycle Confidence | [h] Toggle Hide Fake | [Esc] Back",
+        confidence_label, hide_fake_label
+    );
+
+    let para = Paragraph::new(text)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true })
+        .block(
+            Block::default()
+                .title(" Filter ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+        );
+
+    let area = centered_rect(50, 30, f.size());
+    f.render_widget(Clear, area);
+    f.render_widget(para, area);
+}
+
 fn draw_search_popup(f: &mut Frame, app: &App) {
     let block = Block::default()
         .title(" Search ")
