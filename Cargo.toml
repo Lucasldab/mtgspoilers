@@ -20,14 +20,7 @@ serde_json = "1.0"
 toml = "0.8"
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite"] }
-
-# Image processing (for deduplication)
-image = "0.24"
-img_hash = "3.2"
-
-# OCR for card text extraction
-tesseract = "0.12"
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 # Reddit API
 roux = "2.2"
@@ -45,13 +38,6 @@ tracing-subscriber = "0.3"
 
 # Regex
 regex = "1.10"
-
-# Configuration
-config = "0.13"
-
-[features]
-default = ["fetcher"]
-fetcher = []
 
 [dev-dependencies]
 mockito = "1.2"
