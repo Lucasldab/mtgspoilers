@@ -234,6 +234,20 @@ impl Database {
         Ok(())
     }
 
+    /// Deletes cards whose first_seen timestamp is older than `days` days.
+    /// Returns the number of rows deleted.
+    pub async fn purge_old_cards(&self, days: u64) -> Result<u64> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+        let cutoff_naive = cutoff.naive_utc();
+        let result = sqlx::query(
+            "DELETE FROM cards WHERE first_seen < ?1"
+        )
+        .bind(cutoff_naive)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     /// Returns (id, name, image_url) tuples for all cards.
     /// Used by Deduplicator::from_db to seed the in-memory dedup index on startup.
     pub async fn get_all_card_stubs(&self) -> Result<Vec<(String, String, Option<String>)>> {
